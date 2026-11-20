@@ -1,0 +1,57 @@
+# Annotated GoalSpec skeleton (full schema: goal_schema.json). Replace every <...>.
+# Relative paths resolve against the folder containing this file.
+name: <short-name>
+goal: |
+  <What should get better, in plain language, plus constraints (formats that must be kept, what
+  must not get worse). This text is given to every improvement agent and to the planner.>
+notes: |
+  <Domain knowledge for the agents: known failure modes, evaluation protocol details, measured
+  costs on this machine (e.g. "one screen eval takes ~3 min"), reference numbers if known.>
+
+target:
+  kind: hf_weights
+  model: <hf-org/model-id or ./local/dir>
+
+evaluation:
+  metric: metric.py                 # defines evaluate(model_dir, examples, config) -> dict
+  primary: <key returned by evaluate(), e.g. accuracy>
+  direction: maximize               # or minimize
+  secondary: []                     # e.g. [{key: n_params, direction: minimize}]
+  splits:
+    dev: data/dev.jsonl             # visible to agents (practice, probing, screening)
+    val: data/val.jsonl             # HIDDEN: decides acceptance each iteration
+    test: data/test.jsonl           # HIDDEN: final report only
+  config: {}                        # passed to evaluate() for val/test (e.g. max_tokens, samples)
+  timeout_s: 7200
+
+probe:                              # agents' metered model runs on dev
+  forward_pass_budget: 50
+  max_examples: 32
+  config: {}                        # cheaper settings for probes
+
+search:
+  max_iterations: 10
+  patience: 3                       # stop after this many non-improving iterations
+  min_delta: 0.0                    # val gain required (raise it when val is small/noisy)
+  wall_clock_hours: 48
+  strategies: [weight_programming, finetuning, architecture, agentic_optimization, free]
+
+population:                         # caps; the LLM planner decides each iteration's shape
+  controller: llm
+  max_experiments: 2
+  size: 4
+  promote_top: 2
+  screen: {n: 16, config: {}}       # cheap dev screening of populations
+
+agentic_optimization: {generations: 3, population: 4, llm: true}
+
+agent:
+  backend: claude_code              # claude_code | antigravity | codex
+  timeout_s: 10800
+  gpu: true                         # false: agent CPU-only, forward passes only via probes
+
+guards:
+  max_changed_fraction: 0.25
+  allow_model_candidates: true      # architecture changes allowed?
+  max_params_ratio: 1.25
+  forbidden_patterns: []            # e.g. HF ids of benchmark test sets agents must not touch

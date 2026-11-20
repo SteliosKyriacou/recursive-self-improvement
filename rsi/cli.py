@@ -42,11 +42,9 @@ def cmd_new(a) -> None:
     ref = gdir / "reference"
     ref.mkdir(exist_ok=True)
     (ref / "goal_schema.json").write_text(json.dumps(GoalSpec.model_json_schema(), indent=1))
-    ex = REPO / "examples" / "qwen_math"
-    for src, dst in (("goal.yaml", "example_goal.yaml"), ("metric.py", "example_metric.py"),
-                     ("prepare_data.py", "example_prepare_data.py")):
-        if (ex / src).exists():
-            shutil.copy2(ex / src, ref / dst)
+    tdir = Path(__file__).parent / "templates"
+    for f in ("goal_template.yaml", "metric_template.py"):  # generic, problem-agnostic
+        shutil.copy2(tdir / f, ref / f)
     text = (Path(__file__).parent / "templates" / "DESIGNER.md").read_text().format(
         goal_dir=gdir, python=sys.executable)
     instr = ["CLAUDE.md", "AGENTS.md", "GEMINI.md"]
@@ -55,13 +53,26 @@ def cmd_new(a) -> None:
     backend = make_backend(AgentSpec(backend=a.backend))
     if not backend.available():
         sys.exit(f"agent backend '{a.backend}' is not installed")
+    import signal
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))  # so the cleanup below still runs
     kickoff = (f"Hi! I want to set up a recursive self-improvement run (goal name '{name}'). "
                "Please interview me and then write goal.yaml, metric.py and the data splits here.")
     if a.prompt:
         kickoff += " Here is what I have in mind: " + a.prompt
-    print(f"[rsi] goal designer ({a.backend}) in {gdir} — exit the session when you are done.\n")
     try:
-        backend.interactive(kickoff, text, gdir)
+        if a.headless:  # no conversation: the designer works from --prompt alone
+            if not a.prompt:
+                sys.exit("--headless needs --prompt describing the problem")
+            kickoff += (" I am not available for questions in this session: choose sensible defaults, "
+                        "record every assumption in DESIGN_NOTES.md, and do everything in 'Before you finish' "
+                        "except asking me.")
+            print(f"[rsi] goal designer ({a.backend}, headless) working in {gdir} ...")
+            res = backend.run(kickoff, gdir, [], {"PATH": f"{Path(sys.executable).parent}:{__import__('os').environ.get('PATH', '')}"},
+                              gdir / ".designer", timeout_s=a.timeout)
+            print(res.final_text[-3000:] or res.error)
+        else:
+            print(f"[rsi] goal designer ({a.backend}) in {gdir} — exit the session when you are done.\n")
+            backend.interactive(kickoff, text, gdir)
     finally:
         for f in instr:
             (gdir / f).unlink(missing_ok=True)
@@ -72,7 +83,9 @@ def cmd_new(a) -> None:
     print_report(goal, errors, warnings)
     if errors:
         sys.exit(f"[rsi] fix the errors above (edit {goal} or rerun `rsi new {name}`), then `rsi run {goal}`.")
-    if input("\nStart the self-improvement run now? [y/N] ").strip().lower() in ("y", "yes"):
+    if a.headless:
+        print(f"Start it with:  rsi run {goal}")
+    elif input("\nStart the self-improvement run now? [y/N] ").strip().lower() in ("y", "yes"):
         Orchestrator(spec, _run_dir(spec, None)).run_loop()
     else:
         print(f"Start it later with:  rsi run {goal}")
@@ -168,6 +181,8 @@ def main(argv=None) -> None:
     n.add_argument("--dir")
     n.add_argument("--backend", default="claude_code", choices=BACKENDS[:3])
     n.add_argument("--prompt", help="what you want, to start the conversation")
+    n.add_argument("--headless", action="store_true", help="no conversation: design from --prompt alone")
+    n.add_argument("--timeout", type=int, default=3600, help="headless: max seconds")
     r = sub.add_parser("run", help="start a run from a goal YAML")
     r.add_argument("spec")
     r.add_argument("--run-dir")

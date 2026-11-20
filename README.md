@@ -29,7 +29,7 @@ until the score converges or the budget runs out.
 ```
 
 ## Contents
-- **Walkthrough: [set up and run the Qwen3.5 math example with `rsi init`](docs/qwen-math-example.md)**
+- **Walkthrough: [set up the Qwen3.5 math problem by talking to `rsi new`, then run it](docs/qwen-math-example.md)**
 - [Design](#design)
 - [Install](#install)
 - [Quick start](#quick-start)
@@ -127,15 +127,13 @@ cp -r ~/repos/recursive-self-improvement/examples/toy mytoy && ~/repos/recursive
 rsi run mytoy/goal.yaml --run-dir runs/toy && cat runs/toy/report.md
 
 # 1. Design a new goal by chatting with an agent
-rsi new my-goal                                    # or: rsi new my-goal --backend codex --prompt "make X better at Y"
+rsi new my-goal                                    # or: --backend codex, --prompt "make X better at Y", --headless
 
-# 2. Or start from a built-in example: "Make Qwen3.5-0.8B better at math" (the paper's Exp 8)
-mkdir qwen-test && cd qwen-test
-rsi init qwen_math                                 # copies goal*.yaml + metric.py + prepare_data.py, builds data/
-rsi run goal.yaml                                  # all strategies, LLM planner, agent has GPU
-rsi run goal_paper.yaml                            # paper-faithful: weight edits (+ tuning), CPU-only agent
-# A goal YAML's paths are relative to its own folder: metric.py and data/ must sit next to it.
-# Step-by-step guide: docs/qwen-math-example.md
+# 2. Example: "Make Qwen3.5-0.8B better at math" (the paper's Exp 8), set up by talking to rsi new
+mkdir ~/rsi-qwen && cd ~/rsi-qwen && rsi new qwen-math
+#    → step-by-step guide with a suggested conversation: docs/qwen-math-example.md
+rsi run goals/qwen-math/goal.yaml                  # or answer "y" at the end of rsi new
+# A goal is a folder: goal.yaml + metric.py + data/ (paths in the YAML are relative to it).
 
 # 3. Watch, resume, extend
 rsi status runs/<run>                              # iterations, plans, candidates

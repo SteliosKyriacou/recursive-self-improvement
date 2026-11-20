@@ -106,6 +106,10 @@ def print_report(spec_path, errors, warnings) -> None:
     print(f"validate {spec_path}:")
     for e in errors:
         print(f"  ✗ {e}")
+    if any("missing" in e for e in errors):
+        print("  → paths in a goal YAML are relative to the YAML's own folder; metric.py and data/ must be there.\n"
+              "    For a built-in example run `rsi init <example>` in that folder (lists: `rsi init --list`);\n"
+              "    for data produced by a script, run it first (e.g. `python prepare_data.py`).")
     for w in warnings:
         print(f"  ! {w}")
     if not errors:

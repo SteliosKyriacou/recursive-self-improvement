@@ -6,6 +6,10 @@
   rsi status RUN_DIR
   rsi validate GOAL.yaml
   rsi eval GOAL.yaml MODEL_DIR [--split dev|val|test] [--limit N]      one-off evaluation
+  rsi init [EXAMPLE] [--dir D]                 copy a ready-made example goal (+ metric, data) here
+  rsi doctor                                   check the installation (GPU, vLLM, agent CLIs)
+
+Runs are written to ./runs/ of the current directory (override with --run-dir).
 """
 from __future__ import annotations
 
@@ -93,9 +97,72 @@ def cmd_status(a) -> None:
                   f"{(c['error'] or c['summary'])[:70]}")
 
 
+def cmd_init(a) -> None:
+    import subprocess
+    ex_root = REPO / "examples"
+    names = sorted(p.name for p in ex_root.iterdir() if (p / "goal.yaml").exists()) if ex_root.exists() else []
+    if a.list or not a.example:
+        print("examples:", ", ".join(names) or "(none: non-editable install)")
+        print("usage: rsi init <example> [--dir DIR]")
+        return
+    if a.example not in names:
+        sys.exit(f"unknown example '{a.example}'. Available: {', '.join(names)}")
+    src, dst = ex_root / a.example, Path(a.dir or ".").resolve()
+    dst.mkdir(parents=True, exist_ok=True)
+    for f in sorted(src.iterdir()):
+        if f.is_dir() or f.suffix not in (".yaml", ".py", ".md"):
+            continue  # data / models are generated below, never copied
+        t = dst / f.name
+        if t.exists() and not a.force:
+            print(f"  keep   {t.name} (exists; --force to overwrite)")
+            continue
+        shutil.copy2(f, t)
+        print(f"  copied {t.name}")
+    for script in ("prepare_data.py", "make_toy.py"):
+        if (dst / script).exists() and not a.no_data:
+            print(f"  running {script} (builds data/) ...")
+            subprocess.run([sys.executable, script], cwd=dst, check=True)
+    goals = sorted(p.name for p in dst.glob("goal*.yaml"))
+    print(f"\nready in {dst}. Goals: {', '.join(goals)}\n  rsi validate {goals[0] if goals else 'goal.yaml'}"
+          f"\n  rsi run {goals[0] if goals else 'goal.yaml'}")
+
+
+def cmd_doctor() -> None:
+    import shutil as sh
+    from . import __version__
+    print(f"rsi {__version__}")
+    print(f"  package : {Path(__file__).resolve().parent}")
+    print(f"  python  : {sys.executable}")
+    try:
+        import torch
+        cuda = torch.cuda.is_available()
+        gpu = torch.cuda.get_device_name(0) if cuda else "-"
+        print(f"  torch   : {torch.__version__}  cuda={cuda}  {gpu}")
+    except Exception as e:  # noqa: BLE001
+        print(f"  torch   : not usable ({e})")
+    try:
+        import vllm
+        print(f"  vllm    : {vllm.__version__}")
+    except Exception:  # noqa: BLE001
+        print("  vllm    : not installed (needed for the math example; ./install.sh installs it)")
+    for name, b in (("claude_code", "claude"), ("antigravity", "agy"), ("codex", "codex")):
+        print(f"  agent   : {name:<12} {sh.which(b) or 'not found'}")
+    ex = REPO / "examples"
+    print(f"  examples: {ex if ex.exists() else 'not available (non-editable install)'}")
+
+
 def main(argv=None) -> None:
+    from . import __version__
     ap = argparse.ArgumentParser(prog="rsi", description="Recursive self-improvement harness")
+    ap.add_argument("--version", action="version", version=f"rsi {__version__}")
     sub = ap.add_subparsers(dest="cmd", required=True)
+    sub.add_parser("doctor", help="check the installation")
+    i = sub.add_parser("init", help="copy a ready-made example goal into a folder")
+    i.add_argument("example", nargs="?")
+    i.add_argument("--dir", help="target folder (default: current)")
+    i.add_argument("--list", action="store_true")
+    i.add_argument("--force", action="store_true", help="overwrite existing files")
+    i.add_argument("--no-data", action="store_true", help="do not run the data preparation script")
     n = sub.add_parser("new", help="design a goal interactively with an agent")
     n.add_argument("name", nargs="?")
     n.add_argument("--dir")
@@ -125,7 +192,11 @@ def main(argv=None) -> None:
     e.add_argument("--config", default="{}", help="JSON overrides of evaluation.config")
     a = ap.parse_args(argv)
 
-    if a.cmd == "new":
+    if a.cmd == "doctor":
+        cmd_doctor()
+    elif a.cmd == "init":
+        cmd_init(a)
+    elif a.cmd == "new":
         cmd_new(a)
     elif a.cmd == "run":
         if not a.skip_validate:

@@ -207,20 +207,27 @@ class Codex(AgentBackend):
         return cmd + [prompt]
 
 
+def _argv(cmd: list[str]) -> list[str]:
+    """`python`/`python3` means rsi's own interpreter, so commands work from any folder/venv."""
+    import sys
+    return [sys.executable] + cmd[1:] if cmd and cmd[0] in ("python", "python3") else list(cmd)
+
+
 class Command(AgentBackend):
     """Any executable: spec.command is an argv list; '{prompt}' and '{workspace}' are substituted."""
     name = "command"
 
     def available(self) -> bool:
-        return bool(self.spec.command) and shutil.which(self.spec.command[0]) is not None
+        argv = _argv(self.spec.command)
+        return bool(argv) and shutil.which(argv[0]) is not None
 
     def command(self, prompt, workspace, extra_dirs):
-        return [a.replace("{prompt}", prompt).replace("{workspace}", str(workspace)) for a in self.spec.command]
+        return [a.replace("{prompt}", prompt).replace("{workspace}", str(workspace)) for a in _argv(self.spec.command)]
 
     def complete_command(self, prompt):
         if not self.spec.complete_command:
             raise NotImplementedError("agent.complete_command not set")
-        return [a.replace("{prompt}", prompt) for a in self.spec.complete_command]
+        return [a.replace("{prompt}", prompt) for a in _argv(self.spec.complete_command)]
 
 
 BACKENDS = {b.name: b for b in (ClaudeCode, Antigravity, Codex, Command)}

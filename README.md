@@ -29,6 +29,7 @@ until the score converges or the budget runs out.
 ```
 
 ## Contents
+- **Walkthrough: [set up and run the Qwen3.5 math example with `rsi init`](docs/qwen-math-example.md)**
 - [Design](#design)
 - [Install](#install)
 - [Quick start](#quick-start)
@@ -67,13 +68,20 @@ https://huggingface.co/RikiyaT/Qwen3.5-0.8B-weight-space-programming). The ideas
 
 ## Install
 
-Requires Linux, Python ≥ 3.10 and an NVIDIA GPU for real models. The toy example runs on CPU.
+Install it once, then use `rsi` from any folder, like `claude`. Requires Linux and Python ≥ 3.10;
+real models need an NVIDIA GPU.
 
 ```bash
-git clone <this repo> && cd recursive-self-improvement
-python3 -m venv .venv && source .venv/bin/activate
-pip install -e .                 # core harness
+git clone git@github.com:SteliosKyriacou/recursive-self-improvement.git ~/repos/recursive-self-improvement
+cd ~/repos/recursive-self-improvement
+./install.sh              # venv + editable install + vLLM matched to your driver + launcher ~/.local/bin/rsi
+rsi doctor                # from anywhere: shows python, torch/CUDA, vLLM, agent CLIs
 ```
+- `./install.sh --no-gpu` installs only the core (no vLLM; CPU/toy only). `--venv DIR` / `--bin-dir DIR` change locations.
+- The install is editable, so `git pull` in the repo updates the `rsi` command. Re-run `./install.sh` to repair it.
+- Uninstall: `rm ~/.local/bin/rsi` (and the repo's `.venv`).
+- Work anywhere: `cd ~/my-project && rsi new my-goal` creates `./goals/my-goal/`, and
+  `rsi run path/to/goal.yaml` writes runs to `./runs/` of the current folder.
 
 **Agent CLI.** Install at least one, and make sure it is logged in:
 
@@ -87,7 +95,7 @@ pip install -e .                 # core harness
 > ⚠️ For unattended runs, agents use their permission-bypass modes. They can run any command as
 > your user, so run them on a machine or account you are comfortable with.
 
-**Extras for the Qwen-math example** (vLLM generation, math-verify grading):
+**Manual install of the GPU extras** (what `install.sh` does for you):
 ```bash
 nvidia-smi | grep "CUDA Version"           # check the driver's CUDA version
 
@@ -103,26 +111,31 @@ pip install math-verify datasets pandas pyarrow transformers
 python -c "import torch, vllm; print(torch.cuda.is_available(), vllm.__version__)"
 ```
 
-Check the install (CPU, about 1 min): `pip install pytest && python -m pytest -q tests`
+Run the test suite (CPU, about 1 min): `.venv/bin/pip install pytest && .venv/bin/python -m pytest -q tests`
 
-Keep the venv active. The agents, eval workers and recipe builders all use the same interpreter.
+You don't need to activate the venv. The `rsi` launcher, agents, eval workers and recipe builders
+all use the venv's interpreter automatically. In a goal's `agent.command`, `python` means that
+interpreter.
 
 ---
 
 ## Quick start
 
 ```bash
-# 0. Toy run: CPU, ~1 min, scripted agent + agentic optimization, no LLM needed
-python examples/toy/make_toy.py
-rsi run examples/toy/goal.yaml --run-dir runs/toy && cat runs/toy/report.md
+# 0. Toy run: CPU, ~1 min, scripted agent + agentic optimization, no LLM needed (from any folder)
+cp -r ~/repos/recursive-self-improvement/examples/toy mytoy && ~/repos/recursive-self-improvement/.venv/bin/python mytoy/make_toy.py
+rsi run mytoy/goal.yaml --run-dir runs/toy && cat runs/toy/report.md
 
 # 1. Design a new goal by chatting with an agent
 rsi new my-goal                                    # or: rsi new my-goal --backend codex --prompt "make X better at Y"
 
-# 2. Or start from an existing YAML: "Make Qwen3.5-0.8B better at math" (the paper's Exp 8)
-python examples/qwen_math/prepare_data.py          # dev = 128 MATH-train · val = 100 / test = 400 MATH-500
-rsi run examples/qwen_math/goal.yaml               # all strategies, LLM planner, agent has GPU
-rsi run examples/qwen_math/goal_paper.yaml         # paper-faithful: weight edits (+ tuning), CPU-only agent
+# 2. Or start from a built-in example: "Make Qwen3.5-0.8B better at math" (the paper's Exp 8)
+mkdir qwen-test && cd qwen-test
+rsi init qwen_math                                 # copies goal*.yaml + metric.py + prepare_data.py, builds data/
+rsi run goal.yaml                                  # all strategies, LLM planner, agent has GPU
+rsi run goal_paper.yaml                            # paper-faithful: weight edits (+ tuning), CPU-only agent
+# A goal YAML's paths are relative to its own folder: metric.py and data/ must sit next to it.
+# Step-by-step guide: docs/qwen-math-example.md
 
 # 3. Watch, resume, extend
 rsi status runs/<run>                              # iterations, plans, candidates
@@ -313,7 +326,8 @@ rsi/controller.py    planner / bandit / fixed        rsi/optim.py          agent
 rsi/archive.py       candidate records, lineage      rsi/targets.py        deltas, model candidates, guards
 rsi/evaluator.py     frozen subprocess evaluation    rsi/probe.py          metered dev probes
 rsi/agents/          claude_code / antigravity / codex / command backends
-rsi/validate.py      pre-flight checks               rsi/cli.py            new / run / resume / status / validate / eval
+rsi/validate.py      pre-flight checks               rsi/cli.py            new / run / resume / status / validate / eval / doctor
+install.sh           install once, use anywhere (launcher in ~/.local/bin)
 rsi/templates/       AGENTS.md (experiment), PLANNER.md, DESIGNER.md (rsi new)
 rsi/strategies/      toolbox: common/, weight_programming/, finetuning/, architecture/, agentic_optimization/, recipes/
 examples/toy/        CPU smoke test        examples/qwen_math/   Exp 8: goal.yaml, goal_paper.yaml, metric.py, prepare_data.py

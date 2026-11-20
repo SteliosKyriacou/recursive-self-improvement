@@ -1,0 +1,8 @@
+.venv/
+runs/
+__pycache__/
+*.egg-info/
+examples/toy/model/
+examples/toy/data/
+examples/qwen_math/data/
+*.safetensors

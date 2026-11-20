@@ -1,0 +1,27 @@
+# Toy smoke test of the harness (CPU, ~1 min, no LLM): rsi run examples/toy/goal.yaml
+name: toy
+goal: Move the weight vector w closer to the hidden targets.
+target: {kind: hf_weights, model: ./model}
+evaluation:
+  metric: metric.py
+  primary: score
+  direction: maximize
+  splits: {dev: data/dev.jsonl, val: data/val.jsonl, test: data/test.jsonl}
+  timeout_s: 120
+probe: {forward_pass_budget: 5, max_examples: 8}
+search: {max_iterations: 4, patience: 3, min_delta: 0.0, strategies: [free, agentic_optimization]}
+population:
+  controller: fixed            # deterministic for tests; real runs use the LLM planner
+  screen: {n: 8}
+  fixed_plan:
+    screen: true
+    promote_top: 2
+    experiments:
+      - {strategy: free, n_candidates: 2, brief: random search}
+      - {strategy: agentic_optimization, recipe: toy_w, generations: 2, population: 4}
+agentic_optimization: {generations: 2, population: 4, llm: false}
+agent:
+  backend: command
+  command: [python, toy_agent.py]
+  timeout_s: 300
+guards: {forbidden_patterns: ["val.jsonl"]}

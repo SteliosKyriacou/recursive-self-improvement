@@ -1,0 +1,75 @@
+# "Make Qwen3.5-0.8B better at math" — the Exp 8 task from "Sparks of Weight-Space Programming".
+# Full harness: the planner may schedule weight programming, gradient finetuning, architecture
+# changes, agentic optimization or free-form experiments — one at a time or as a population.
+# Run:   rsi run examples/qwen_math/goal.yaml
+name: qwen35-math
+goal: |
+  Make Qwen3.5-0.8B better at competition math (MATH-style problems, thinking mode on).
+  The model must still answer in its normal chat format with the final answer in \boxed{}.
+  Known failure of the base model: in thinking mode it very often loops until the token limit.
+notes: |
+  Evaluation uses vLLM with the base model's recommended sampling (T=0.6, top_p=0.95, top_k=20,
+  presence_penalty=1.5) and math-verify on the last \boxed{} after </think>. Answers cut by the
+  token limit almost always score 0, so cut_share is a strong secondary signal.
+  Cost on this machine (RTX 4070 Ti): a probe of 32 dev problems at 16k tokens takes ~5-8 min,
+  so plan your probe budget around your 3-hour turn. Reference points on 64 dev problems at 32k
+  tokens: the paper's published edit scores 42% (33% cut); the base model ~0-5% (>90% cut).
+
+target:
+  kind: hf_weights
+  model: Qwen/Qwen3.5-0.8B
+
+evaluation:
+  metric: metric.py
+  primary: accuracy
+  direction: maximize
+  splits:
+    dev: data/dev.jsonl      # MATH train (visible)
+    val: data/val.jsonl      # 100 MATH-500 problems (hidden, selection)
+    test: data/test.jsonl    # 400 MATH-500 problems (hidden, final report only)
+  config:
+    max_tokens: 32768        # paper's limit. At 8k even the paper's edited model is ~97% cut off.
+    samples: 1               # ~30 min per 100-problem val eval on an RTX 4070 Ti
+    thinking: true
+    gpu_memory_utilization: 0.85
+  timeout_s: 7200
+
+probe:
+  forward_pass_budget: 50    # paper's largest budget
+  max_examples: 32
+  config:
+    samples: 1
+    max_tokens: 16384        # cheaper probes; still separates base (~0%) from the paper's edit (~20%)
+    gpu_memory_utilization: 0.45   # leave room for the agent's own GPU work
+
+search:
+  max_iterations: 12
+  patience: 4
+  min_delta: 0.03            # val is 100 problems x 1 sample: ignore sub-noise gains
+  wall_clock_hours: 48
+  strategies: [weight_programming, finetuning, architecture, agentic_optimization, free]
+
+population:                  # caps — the LLM planner decides the shape of each iteration
+  controller: llm
+  max_experiments: 2
+  size: 4                    # candidates from agent experiments per iteration
+  promote_top: 2             # hidden-val evals per iteration (~30 min each)
+  screen:
+    n: 16                    # dev[0:16]; ~3-4 min per candidate at 16k tokens
+    config: {max_tokens: 16384, gpu_memory_utilization: 0.85}
+
+agentic_optimization:
+  generations: 3
+  population: 4              # 12 screened candidates per optimization experiment
+  llm: true
+
+agent:
+  backend: claude_code       # or: antigravity | codex
+  model: null                # backend default
+  timeout_s: 10800          # 3 h per iteration (probes are slow, see notes)
+  gpu: true
+
+guards:
+  max_changed_fraction: 0.25
+  max_params_ratio: 1.25     # architecture candidates may grow the model by at most 25%
+  forbidden_patterns: ["HuggingFaceH4/MATH-500", "math500", "MATH-500/test"]
